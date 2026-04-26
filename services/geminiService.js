@@ -1,10 +1,10 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-// Initialize Gemini (when you get the key)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+/**
+ * FLAUNT - Outfit Analysis Service (OpenRouter)
+ * Uses free vision models via OpenRouter
+ */
 
 /**
- * Rate an outfit using Gemini 1.5 Flash
+ * Rate an outfit using OpenRouter API
  * @param {string} imageBase64 - Base64 encoded image (NO data: prefix)
  * @param {string} mimeType - Image MIME type (e.g., 'image/jpeg')
  * @param {string} occasion - The occasion for the outfit
@@ -12,75 +12,76 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
  */
 async function rateOutfit(imageBase64, mimeType, occasion) {
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://flaunt.fit',
+                'X-Title': 'FLAUNT'
+            },
+            body: JSON.stringify({
+                // Free vision models on OpenRouter (try in order)
+                model: 'google/gemma-3-4b-it:free',
+                messages: [{
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:${mimeType};base64,${imageBase64}`
+                            }
+                        },
+                        {
+                            type: 'text',
+                            text: `You are FLAUNT, an expert AI fashion stylist.
 
-        const prompt = `You are FLAUNT, an expert AI fashion stylist with deep knowledge of global fashion, color theory, body types, and cultural appropriateness.
+Analyze this outfit for: ${occasion}
 
-TASK: Analyze this outfit for a ${occasion} occasion.
-
-INSTRUCTIONS:
-1. Identify all visible clothing items and accessories
-2. Analyze color coordination and combination  
-3. Assess the fit and silhouette
-4. Evaluate appropriateness for the stated occasion
-5. Provide specific, actionable improvement suggestions
-6. Be honest but constructive - don't be overly harsh or overly flattering
-
-RESPONSE FORMAT (JSON only, no markdown, no explanation):
+Return ONLY valid JSON (no markdown, no explanation):
 {
-  "overall_score": <number 1-10>,
-  "color_harmony": <number 1-10>,
-  "occasion_fit": <number 1-10>,
-  "style_coherence": <number 1-10>,
-  "fit_proportion": <number 1-10>,
-  "trend_score": <number 1-10>,
-  "summary": "<one punchy sentence about the outfit>",
-  "top_compliment": "<best thing about this outfit>",
-  "top_improvement": "<single most important improvement>",
-  "items_detected": ["<item 1>", "<item 2>", "<item 3>"],
-  "quick_tips": ["<tip 1>", "<tip 2>", "<tip 3>"]
-}
+  "overall_score": <1-10>,
+  "color_harmony": <1-10>,
+  "occasion_fit": <1-10>,
+  "style_coherence": <1-10>,
+  "fit_proportion": <1-10>,
+  "trend_score": <1-10>,
+  "summary": "<one sentence>",
+  "top_compliment": "<best thing>",
+  "top_improvement": "<one improvement>",
+  "items_detected": ["item1", "item2"],
+  "quick_tips": ["tip1", "tip2", "tip3"]
+}`
+                        }
+                    ]
+                }]
+            })
+        });
 
-IMPORTANT: Respond ONLY with valid JSON, no markdown formatting, no other text.`;
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('OpenRouter Error:', JSON.stringify(errorData, null, 2));
+            throw new Error(errorData.error?.message || response.statusText);
+        }
 
-        const result = await model.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    mimeType: mimeType,
-                    data: imageBase64
-                }
-            }
-        ]);
+        const data = await response.json();
+        console.log('OpenRouter Response:', JSON.stringify(data, null, 2));
 
-        const response = await result.response;
-        const text = response.text();
-
-        // Clean up response (remove markdown code blocks if present)
+        const text = data.choices[0].message.content;
         const clean = text.replace(/```json|```/g, '').trim();
 
         return JSON.parse(clean);
 
     } catch (error) {
-        console.error('Gemini API Error:', error);
+        console.error('API Error:', error);
         throw new Error(`Failed to analyze outfit: ${error.message}`);
     }
 }
 
-/**
- * Get available occasions
- */
 const OCCASIONS = [
-    'casual',
-    'office',
-    'formal',
-    'wedding_guest',
-    'date_night',
-    'dholki_mehndi',
-    'nikah',
-    'street_style',
-    'gym',
-    'party'
+    'casual', 'office', 'formal', 'wedding_guest',
+    'date_night', 'dholki_mehndi', 'nikah',
+    'street_style', 'gym', 'party'
 ];
 
 module.exports = { rateOutfit, OCCASIONS };
